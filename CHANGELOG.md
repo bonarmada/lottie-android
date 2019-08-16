@@ -1,3 +1,7 @@
+# 2.7.1
+### Features and Improvments
+* Fixed caching bug fetching cached files from wrong path https://github.com/airbnb/lottie-android/commit/bdbb2cd8e49101dde476c14a9340f244673f1ece
+
 # 2.7.0
 ### Features and Improvements
 * Removed deprecated LottieCompositionFactory APIs. If you were using JsonObjects, switch to Strings (#959).
