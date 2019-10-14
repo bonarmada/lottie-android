@@ -1,3 +1,7 @@
+# 3.0.0
+### Features and Impovements
+* Fixed rendering issues: set library state to 3.0.0beta2 and revert migrate to androidX
+
 # 2.7.1
 ### Features and Improvments
 * Fixed caching bug fetching cached files from wrong path https://github.com/airbnb/lottie-android/commit/bdbb2cd8e49101dde476c14a9340f244673f1ece
