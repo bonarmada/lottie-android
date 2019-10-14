@@ -15,17 +15,17 @@ import java.util.List;
 
 public class ShapeStroke implements ContentModel {
   public enum LineCapType {
-    Butt,
-    Round,
-    Unknown;
+    BUTT,
+    ROUND,
+    UNKNOWN;
 
     public Paint.Cap toPaintCap() {
       switch (this) {
-        case Butt:
+        case BUTT:
           return Paint.Cap.BUTT;
-        case Round:
+        case ROUND:
           return Paint.Cap.ROUND;
-        case Unknown:
+        case UNKNOWN:
         default:
           return Paint.Cap.SQUARE;
       }
@@ -33,17 +33,17 @@ public class ShapeStroke implements ContentModel {
   }
 
   public enum LineJoinType {
-    Miter,
-    Round,
-    Bevel;
+    MITER,
+    ROUND,
+    BEVEL;
 
     public Paint.Join toPaintJoin() {
       switch (this) {
-        case Bevel:
+        case BEVEL:
           return Paint.Join.BEVEL;
-        case Miter:
+        case MITER:
           return Paint.Join.MITER;
-        case Round:
+        case ROUND:
           return Paint.Join.ROUND;
       }
       return null;
@@ -59,11 +59,12 @@ public class ShapeStroke implements ContentModel {
   private final LineCapType capType;
   private final LineJoinType joinType;
   private final float miterLimit;
+  private final boolean hidden;
 
   public ShapeStroke(String name, @Nullable AnimatableFloatValue offset,
-      List<AnimatableFloatValue> lineDashPattern, AnimatableColorValue color,
-      AnimatableIntegerValue opacity, AnimatableFloatValue width, LineCapType capType,
-      LineJoinType joinType, float miterLimit) {
+                     List<AnimatableFloatValue> lineDashPattern, AnimatableColorValue color,
+                     AnimatableIntegerValue opacity, AnimatableFloatValue width, LineCapType capType,
+                     LineJoinType joinType, float miterLimit, boolean hidden) {
     this.name = name;
     this.offset = offset;
     this.lineDashPattern = lineDashPattern;
@@ -73,6 +74,7 @@ public class ShapeStroke implements ContentModel {
     this.capType = capType;
     this.joinType = joinType;
     this.miterLimit = miterLimit;
+    this.hidden = hidden;
   }
 
   @Override public Content toContent(LottieDrawable drawable, BaseLayer layer) {
@@ -113,5 +115,9 @@ public class ShapeStroke implements ContentModel {
 
   public float getMiterLimit() {
     return miterLimit;
+  }
+
+  public boolean isHidden() {
+    return hidden;
   }
 }

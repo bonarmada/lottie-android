@@ -9,7 +9,7 @@ import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
 
 public abstract class BaseLottieAnimator extends ValueAnimator {
-  private final Set<ValueAnimator.AnimatorUpdateListener> updateListeners = new CopyOnWriteArraySet<>();
+  private final Set<AnimatorUpdateListener> updateListeners = new CopyOnWriteArraySet<>();
   private final Set<AnimatorListener> listeners = new CopyOnWriteArraySet<>();
 
   @Override public long getStartDelay() {
@@ -27,11 +27,11 @@ public abstract class BaseLottieAnimator extends ValueAnimator {
     throw new UnsupportedOperationException("LottieAnimator does not support setInterpolator.");
   }
 
-  public void addUpdateListener(ValueAnimator.AnimatorUpdateListener listener) {
+  public void addUpdateListener(AnimatorUpdateListener listener) {
     updateListeners.add(listener);
   }
 
-  public void removeUpdateListener(ValueAnimator.AnimatorUpdateListener listener) {
+  public void removeUpdateListener(AnimatorUpdateListener listener) {
     updateListeners.remove(listener);
   }
 
@@ -39,11 +39,11 @@ public abstract class BaseLottieAnimator extends ValueAnimator {
     updateListeners.clear();
   }
 
-  public void addListener(ValueAnimator.AnimatorListener listener) {
+  public void addListener(AnimatorListener listener) {
     listeners.add(listener);
   }
 
-  public void removeListener(ValueAnimator.AnimatorListener listener) {
+  public void removeListener(AnimatorListener listener) {
     listeners.remove(listener);
   }
 
@@ -52,7 +52,7 @@ public abstract class BaseLottieAnimator extends ValueAnimator {
   }
 
   void notifyStart(boolean isReverse) {
-    for (Animator.AnimatorListener listener : listeners) {
+    for (AnimatorListener listener : listeners) {
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
         listener.onAnimationStart(this, isReverse);
       } else {
@@ -62,13 +62,13 @@ public abstract class BaseLottieAnimator extends ValueAnimator {
   }
 
   void notifyRepeat() {
-    for (Animator.AnimatorListener listener : listeners) {
+    for (AnimatorListener listener : listeners) {
       listener.onAnimationRepeat(this);
     }
   }
 
   void notifyEnd(boolean isReverse) {
-    for (Animator.AnimatorListener listener : listeners) {
+    for (AnimatorListener listener : listeners) {
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
         listener.onAnimationEnd(this, isReverse);
       } else {
@@ -78,13 +78,13 @@ public abstract class BaseLottieAnimator extends ValueAnimator {
   }
 
   void notifyCancel() {
-    for (Animator.AnimatorListener listener : listeners) {
+    for (AnimatorListener listener : listeners) {
       listener.onAnimationCancel(this);
     }
   }
 
   void notifyUpdate() {
-    for (ValueAnimator.AnimatorUpdateListener listener : updateListeners) {
+    for (AnimatorUpdateListener listener : updateListeners) {
       listener.onAnimationUpdate(this);
     }
   }

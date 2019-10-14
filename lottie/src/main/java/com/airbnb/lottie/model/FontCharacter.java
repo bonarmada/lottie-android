@@ -1,5 +1,6 @@
 package com.airbnb.lottie.model;
 
+
 import android.support.annotation.RestrictTo;
 
 import com.airbnb.lottie.model.content.ShapeGroup;
@@ -7,6 +8,7 @@ import com.airbnb.lottie.model.content.ShapeGroup;
 import java.util.List;
 
 import static android.support.annotation.RestrictTo.Scope.LIBRARY;
+
 
 @RestrictTo(LIBRARY)
 public class FontCharacter {

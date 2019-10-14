@@ -21,7 +21,7 @@ public class ShapeLayer extends BaseLayer {
     super(lottieDrawable, layerModel);
 
     // Naming this __container allows it to be ignored in KeyPath matching.
-    ShapeGroup shapeGroup = new ShapeGroup("__container", layerModel.getShapes());
+    ShapeGroup shapeGroup = new ShapeGroup("__container", layerModel.getShapes(), false);
     contentGroup = new ContentGroup(lottieDrawable, this, shapeGroup);
     contentGroup.setContents(Collections.<Content>emptyList(), Collections.<Content>emptyList());
   }
@@ -30,9 +30,9 @@ public class ShapeLayer extends BaseLayer {
     contentGroup.draw(canvas, parentMatrix, parentAlpha);
   }
 
-  @Override public void getBounds(RectF outBounds, Matrix parentMatrix) {
-    super.getBounds(outBounds, parentMatrix);
-    contentGroup.getBounds(outBounds, boundsMatrix);
+  @Override public void getBounds(RectF outBounds, Matrix parentMatrix, boolean applyParents) {
+    super.getBounds(outBounds, parentMatrix, applyParents);
+    contentGroup.getBounds(outBounds, boundsMatrix, applyParents);
   }
 
   @Override
