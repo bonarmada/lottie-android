@@ -18,6 +18,8 @@ import com.airbnb.lottie.value.LottieValueCallback;
  *    {@link #TRANSFORM_OPACITY}
  *    {@link #TRANSFORM_SCALE}
  *    {@link #TRANSFORM_ROTATION}
+ *    {@link #TRANSFORM_SKEW}
+ *    {@link #TRANSFORM_SKEW_ANGLE}
  *
  * Fill:
  *    {@link #COLOR} (non-gradient)
@@ -63,7 +65,6 @@ public interface LottieProperty {
   Integer TRANSFORM_OPACITY = 3;
   /** [0,100] */
   Integer OPACITY = 4;
-
   /** In Px */
   PointF TRANSFORM_ANCHOR_POINT = new PointF();
   /** In Px */
@@ -71,12 +72,18 @@ public interface LottieProperty {
   /** In Px */
   PointF ELLIPSE_SIZE = new PointF();
   /** In Px */
+  PointF RECTANGLE_SIZE = new PointF();
+  /** In degrees */
+  Float CORNER_RADIUS = 0f;
+  /** In Px */
   PointF POSITION = new PointF();
-
   ScaleXY TRANSFORM_SCALE = new ScaleXY();
-
   /** In degrees */
   Float TRANSFORM_ROTATION = 1f;
+  /** 0-85 */
+  Float TRANSFORM_SKEW = 0f;
+  /** In degrees */
+  Float TRANSFORM_SKEW_ANGLE = 0f;
   /** In Px */
   Float STROKE_WIDTH = 2f;
   Float TEXT_TRACKING = 3f;
@@ -101,4 +108,6 @@ public interface LottieProperty {
   Float TIME_REMAP = 13f;
 
   ColorFilter COLOR_FILTER = new ColorFilter();
+
+  Integer[] GRADIENT_COLOR = new Integer[0];
 }

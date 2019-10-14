@@ -2,10 +2,8 @@ package com.airbnb.lottie.model.layer;
 
 import android.graphics.Canvas;
 import android.graphics.Matrix;
+import android.graphics.Paint;
 import android.graphics.RectF;
-import android.support.annotation.FloatRange;
-import android.support.annotation.Nullable;
-import android.support.v4.util.LongSparseArray;
 
 import com.airbnb.lottie.L;
 import com.airbnb.lottie.LottieComposition;
@@ -15,16 +13,22 @@ import com.airbnb.lottie.animation.keyframe.BaseKeyframeAnimation;
 import com.airbnb.lottie.animation.keyframe.ValueCallbackKeyframeAnimation;
 import com.airbnb.lottie.model.KeyPath;
 import com.airbnb.lottie.model.animatable.AnimatableFloatValue;
+import com.airbnb.lottie.utils.Utils;
 import com.airbnb.lottie.value.LottieValueCallback;
 
 import java.util.ArrayList;
 import java.util.List;
+
+import android.support.annotation.FloatRange;
+import android.support.annotation.Nullable;
+import android.support.v4.util.LongSparseArray;
 
 public class CompositionLayer extends BaseLayer {
   @Nullable private BaseKeyframeAnimation<Float, Float> timeRemapping;
   private final List<BaseLayer> layers = new ArrayList<>();
   private final RectF rect = new RectF();
   private final RectF newClipRect = new RectF();
+  private Paint layerPaint = new Paint();
 
   @Nullable private Boolean hasMatte;
   @Nullable private Boolean hasMasks;
@@ -60,8 +64,8 @@ public class CompositionLayer extends BaseLayer {
       } else {
         layers.add(0, layer);
         switch (lm.getMatteType()) {
-          case Add:
-          case Invert:
+          case ADD:
+          case INVERT:
             mattedLayer = layer;
             break;
         }
@@ -86,55 +90,60 @@ public class CompositionLayer extends BaseLayer {
 
   @Override void drawLayer(Canvas canvas, Matrix parentMatrix, int parentAlpha) {
     L.beginSection("CompositionLayer#draw");
-    canvas.save();
     newClipRect.set(0, 0, layerModel.getPreCompWidth(), layerModel.getPreCompHeight());
     parentMatrix.mapRect(newClipRect);
 
-    for (int i = layers.size() - 1; i >= 0 ; i--) {
+    // Apply off-screen rendering only when needed in order to improve rendering performance.
+    boolean isDrawingWithOffScreen = lottieDrawable.isApplyingOpacityToLayersEnabled() && layers.size() > 1 && parentAlpha != 255;
+    if (isDrawingWithOffScreen) {
+      layerPaint.setAlpha(parentAlpha);
+      Utils.saveLayerCompat(canvas, newClipRect, layerPaint);
+    } else {
+      canvas.save();
+    }
+
+    int childAlpha = isDrawingWithOffScreen ? 255 : parentAlpha;
+    for (int i = layers.size() - 1; i >= 0; i--) {
       boolean nonEmptyClip = true;
       if (!newClipRect.isEmpty()) {
         nonEmptyClip = canvas.clipRect(newClipRect);
       }
       if (nonEmptyClip) {
         BaseLayer layer = layers.get(i);
-        layer.draw(canvas, parentMatrix, parentAlpha);
+        layer.draw(canvas, parentMatrix, childAlpha);
       }
     }
     canvas.restore();
     L.endSection("CompositionLayer#draw");
   }
 
-  @Override public void getBounds(RectF outBounds, Matrix parentMatrix) {
-    super.getBounds(outBounds, parentMatrix);
-    rect.set(0, 0, 0, 0);
+  @Override public void getBounds(RectF outBounds, Matrix parentMatrix, boolean applyParents) {
+    super.getBounds(outBounds, parentMatrix, applyParents);
     for (int i = layers.size() - 1; i >= 0; i--) {
-      BaseLayer content = layers.get(i);
-      content.getBounds(rect, boundsMatrix);
-      if (outBounds.isEmpty()) {
-        outBounds.set(rect);
-      } else {
-        outBounds.set(
-            Math.min(outBounds.left, rect.left),
-            Math.min(outBounds.top, rect.top),
-            Math.max(outBounds.right, rect.right),
-            Math.max(outBounds.bottom, rect.bottom)
-        );
-      }
+      rect.set(0, 0, 0, 0);
+      layers.get(i).getBounds(rect, boundsMatrix, true);
+      outBounds.union(rect);
     }
   }
 
   @Override public void setProgress(@FloatRange(from = 0f, to = 1f) float progress) {
     super.setProgress(progress);
     if (timeRemapping != null) {
-      float duration = lottieDrawable.getComposition().getDuration();
-      long remappedTime = (long) (timeRemapping.getValue() * 1000);
-      progress = remappedTime / duration;
+      // The duration has 0.01 frame offset to show end of animation properly.
+      // https://github.com/airbnb/lottie-android/pull/766
+      // Ignore this offset for calculating time-remapping because time-remapping value is based on original duration.
+      float durationFrames = lottieDrawable.getComposition().getDurationFrames() + 0.01f;
+      float compositionDelayFrames = layerModel.getComposition().getStartFrame();
+      float remappedFrames = timeRemapping.getValue() * layerModel.getComposition().getFrameRate() - compositionDelayFrames;
+      progress = remappedFrames / durationFrames;
     }
     if (layerModel.getTimeStretch() != 0) {
       progress /= layerModel.getTimeStretch();
     }
 
-    progress -= layerModel.getStartProgress();
+    if (timeRemapping == null) {
+      progress -= layerModel.getStartProgress();
+    }
     for (int i = layers.size() - 1; i >= 0; i--) {
       layers.get(i).setProgress(progress);
     }
@@ -151,7 +160,7 @@ public class CompositionLayer extends BaseLayer {
           }
         } else if (layer instanceof CompositionLayer && ((CompositionLayer) layer).hasMasks()) {
           hasMasks = true;
-          return  true;
+          return true;
         }
       }
       hasMasks = false;

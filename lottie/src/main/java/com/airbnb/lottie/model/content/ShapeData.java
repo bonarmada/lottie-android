@@ -2,27 +2,27 @@ package com.airbnb.lottie.model.content;
 
 import android.graphics.PointF;
 import android.support.annotation.FloatRange;
-import android.util.Log;
 
-import com.airbnb.lottie.L;
 import com.airbnb.lottie.model.CubicCurveData;
+import com.airbnb.lottie.utils.Logger;
 import com.airbnb.lottie.utils.MiscUtils;
 
 import java.util.ArrayList;
 import java.util.List;
 
 public class ShapeData {
-  private final List<CubicCurveData> curves = new ArrayList<>();
+  private final List<CubicCurveData> curves;
   private PointF initialPoint;
   private boolean closed;
 
   public ShapeData(PointF initialPoint, boolean closed, List<CubicCurveData> curves) {
     this.initialPoint = initialPoint;
     this.closed = closed;
-    this.curves.addAll(curves);
+    this.curves = new ArrayList<>(curves);
   }
 
   public ShapeData() {
+    curves = new ArrayList<>();
   }
 
   private void setInitialPoint(float x, float y) {
@@ -53,14 +53,18 @@ public class ShapeData {
 
 
     if (shapeData1.getCurves().size() != shapeData2.getCurves().size()) {
-      L.warn("Curves must have the same number of control points. Shape 1: " +
+      Logger.warning("Curves must have the same number of control points. Shape 1: " +
           shapeData1.getCurves().size() + "\tShape 2: " + shapeData2.getCurves().size());
     }
     
-    if (curves.isEmpty()) {
-      int points = Math.min(shapeData1.getCurves().size(), shapeData2.getCurves().size());
-      for (int i = 0; i < points; i++) {
+    int points = Math.min(shapeData1.getCurves().size(), shapeData2.getCurves().size());
+    if (curves.size() < points) {
+      for (int i = curves.size(); i < points; i++) {
         curves.add(new CubicCurveData());
+      }
+    } else if (curves.size() > points) {
+      for (int i = curves.size() - 1; i >= points; i--) {
+        curves.remove(curves.size() - 1);
       }
     }
 

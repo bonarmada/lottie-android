@@ -7,6 +7,7 @@ import android.support.annotation.Nullable;
 import android.support.annotation.VisibleForTesting;
 import android.view.Choreographer;
 
+import com.airbnb.lottie.L;
 import com.airbnb.lottie.LottieComposition;
 
 /**
@@ -82,8 +83,9 @@ public class LottieValueAnimator extends BaseLottieAnimator implements Choreogra
       return;
     }
 
-    long now = System.nanoTime();
-    long timeSinceFrame = now - lastFrameTimeNs;
+    L.beginSection("LottieValueAnimator#doFrame");
+    long now = frameTimeNanos;
+    long timeSinceFrame = lastFrameTimeNs == 0 ? 0 : now - lastFrameTimeNs;
     float frameDuration = getFrameDurationNs();
     float dFrames = timeSinceFrame / frameDuration;
 
@@ -96,7 +98,7 @@ public class LottieValueAnimator extends BaseLottieAnimator implements Choreogra
     notifyUpdate();
     if (ended) {
       if (getRepeatCount() != INFINITE && repeatCount >= getRepeatCount()) {
-        frame = getMaxFrame();
+        frame = speed < 0 ? getMinFrame() : getMaxFrame();
         removeFrameCallback();
         notifyEnd(isReversed());
       } else {
@@ -113,6 +115,7 @@ public class LottieValueAnimator extends BaseLottieAnimator implements Choreogra
     }
 
     verifyFrame();
+    L.endSection("LottieValueAnimator#doFrame");
   }
 
   private float getFrameDurationNs() {
@@ -141,16 +144,17 @@ public class LottieValueAnimator extends BaseLottieAnimator implements Choreogra
     } else {
       setMinAndMaxFrames((int) composition.getStartFrame(), (int) composition.getEndFrame());
     }
+    float frame = this.frame;
+    this.frame = 0f;
     setFrame((int) frame);
-    lastFrameTimeNs = System.nanoTime();
   }
 
-  public void setFrame(int frame) {
+  public void setFrame(float frame) {
     if (this.frame == frame) {
       return;
     }
     this.frame = MiscUtils.clamp(frame, getMinFrame(), getMaxFrame());
-    lastFrameTimeNs = System.nanoTime();
+    lastFrameTimeNs = 0;
     notifyUpdate();
   }
 
@@ -158,11 +162,14 @@ public class LottieValueAnimator extends BaseLottieAnimator implements Choreogra
     setMinAndMaxFrames(minFrame, (int) maxFrame);
   }
 
-  public void setMaxFrame(int maxFrame) {
-    setMinAndMaxFrames((int) minFrame, maxFrame);
+  public void setMaxFrame(float maxFrame) {
+    setMinAndMaxFrames(minFrame, maxFrame);
   }
 
-  public void setMinAndMaxFrames(int minFrame, int maxFrame) {
+  public void setMinAndMaxFrames(float minFrame, float maxFrame) {
+    if (minFrame > maxFrame) {
+      throw new IllegalArgumentException(String.format("minFrame (%s) must be <= maxFrame (%s)", minFrame, maxFrame));
+    }
     float compositionMinFrame = composition == null ? -Float.MAX_VALUE : composition.getStartFrame();
     float compositionMaxFrame = composition == null ? Float.MAX_VALUE : composition.getEndFrame();
     this.minFrame = MiscUtils.clamp(minFrame, compositionMinFrame, compositionMaxFrame);
@@ -198,7 +205,7 @@ public class LottieValueAnimator extends BaseLottieAnimator implements Choreogra
     running = true;
     notifyStart(isReversed());
     setFrame((int) (isReversed() ? getMaxFrame() : getMinFrame()));
-    lastFrameTimeNs = System.nanoTime();
+    lastFrameTimeNs = 0;
     repeatCount = 0;
     postFrameCallback();
   }
@@ -218,7 +225,7 @@ public class LottieValueAnimator extends BaseLottieAnimator implements Choreogra
   public void resumeAnimation() {
     running = true;
     postFrameCallback();
-    lastFrameTimeNs = System.nanoTime();
+    lastFrameTimeNs = 0;
     if (isReversed() && getFrame() == getMinFrame()) {
       frame = getMaxFrame();
     } else if (!isReversed() && getFrame() == getMaxFrame()) {

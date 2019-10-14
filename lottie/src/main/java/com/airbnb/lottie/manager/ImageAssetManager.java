@@ -7,17 +7,16 @@ import android.graphics.drawable.Drawable;
 import android.support.annotation.Nullable;
 import android.text.TextUtils;
 import android.util.Base64;
-import android.util.Log;
 import android.view.View;
 
 import com.airbnb.lottie.ImageAssetDelegate;
-import com.airbnb.lottie.L;
 import com.airbnb.lottie.LottieImageAsset;
+import com.airbnb.lottie.utils.Logger;
+import com.airbnb.lottie.utils.Utils;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.Map;
 
 public class ImageAssetManager {
@@ -37,7 +36,7 @@ public class ImageAssetManager {
     }
 
     if (!(callback instanceof View)) {
-      Log.w(L.TAG, "LottieDrawable must be inside of a view for images to work.");
+      Logger.warning("LottieDrawable must be inside of a view for images to work.");
       this.imageAssets = new HashMap<>();
       context = null;
       return;
@@ -62,7 +61,9 @@ public class ImageAssetManager {
       asset.setBitmap(null);
       return ret;
     }
-    return putBitmap(id, bitmap);
+    Bitmap prevBitmap = imageAssets.get(id).getBitmap();
+    putBitmap(id, bitmap);
+    return prevBitmap;
   }
 
   @Nullable public Bitmap bitmapForId(String id) {
@@ -94,7 +95,7 @@ public class ImageAssetManager {
       try {
         data = Base64.decode(filename.substring(filename.indexOf(',') + 1), Base64.DEFAULT);
       } catch (IllegalArgumentException e) {
-        Log.w(L.TAG, "data URL did not have correct base64 format.", e);
+        Logger.warning("data URL did not have correct base64 format.", e);
         return null;
       }
       bitmap = BitmapFactory.decodeByteArray(data, 0, data.length, opts);
@@ -109,26 +110,13 @@ public class ImageAssetManager {
       }
       is = context.getAssets().open(imagesFolder + filename);
     } catch (IOException e) {
-      Log.w(L.TAG, "Unable to open asset.", e);
+      Logger.warning("Unable to open asset.", e);
       return null;
     }
     bitmap = BitmapFactory.decodeStream(is, null, opts);
+    bitmap = Utils.resizeBitmapIfNeeded(bitmap, asset.getWidth(), asset.getHeight());
     return putBitmap(id, bitmap);
   }
-
-  public void recycleBitmaps() {
-    synchronized (bitmapHashLock) {
-      for (Map.Entry<String, LottieImageAsset> entry : imageAssets.entrySet()) {
-        LottieImageAsset asset = entry.getValue();
-        Bitmap bitmap = asset.getBitmap();
-        if (bitmap != null) {
-          bitmap.recycle();
-          asset.setBitmap(null);
-        }
-      }
-    }
-  }
-
 
   public boolean hasSameContext(Context context) {
     return context == null && this.context == null || this.context.equals(context);

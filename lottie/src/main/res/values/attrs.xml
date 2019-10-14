@@ -4,6 +4,7 @@
         <attr name="lottie_fileName" format="string" />
         <attr name="lottie_rawRes" format="reference" />
         <attr name="lottie_url" format="string" />
+        <attr name="lottie_fallbackRes" format="reference" />
         <attr name="lottie_autoPlay" format="boolean" />
         <attr name="lottie_loop" format="boolean" />
         <attr name="lottie_repeatMode" format="enum">
@@ -16,5 +17,12 @@
         <attr name="lottie_enableMergePathsForKitKatAndAbove" format="boolean" />
         <attr name="lottie_colorFilter" format="color" />
         <attr name="lottie_scale" format="float" />
+        <attr name="lottie_speed" format="float" />
+        <!-- These values must be kept in sync with the RenderMode enum -->
+        <attr name="lottie_renderMode" format="enum">
+            <enum name="automatic" value="0" />
+            <enum name="hardware" value="1" />
+            <enum name="software" value="2" />
+        </attr>
     </declare-styleable>
 </resources>

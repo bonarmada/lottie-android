@@ -39,6 +39,7 @@ import kotlinx.android.synthetic.main.bottom_sheet_key_paths.*
 import kotlinx.android.synthetic.main.bottom_sheet_render_times.*
 import kotlinx.android.synthetic.main.bottom_sheet_warnings.*
 import kotlinx.android.synthetic.main.control_bar.*
+import kotlinx.android.synthetic.main.control_bar.view.*
 import kotlinx.android.synthetic.main.control_bar_background_color.*
 import kotlinx.android.synthetic.main.control_bar_player_controls.*
 import kotlinx.android.synthetic.main.control_bar_scale.*
@@ -184,7 +185,8 @@ class PlayerFragment : BaseMvRxFragment() {
         hardwareAccelerationToggle.setOnClickListener { viewModel.toggleHardwareAcceleration() }
         viewModel.selectSubscribe(PlayerState::useHardwareAcceleration) {
             hardwareAccelerationToggle.isActivated = it
-            animationView.useHardwareAcceleration(it)
+//            animationView.useHardwareAcceleration(it)
+//            animationView.hardwareAccelerationToggle
         }
 
         mergePathsToggle.setOnClickListener { viewModel.toggleMergePaths() }

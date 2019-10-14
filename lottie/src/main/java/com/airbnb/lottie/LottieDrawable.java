@@ -12,20 +12,22 @@ import android.graphics.Typeface;
 import android.graphics.drawable.Animatable;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
+import android.view.View;
+
 import android.support.annotation.FloatRange;
 import android.support.annotation.IntDef;
 import android.support.annotation.IntRange;
 import android.support.annotation.MainThread;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
-import android.util.Log;
-import android.view.View;
 
 import com.airbnb.lottie.manager.FontAssetManager;
 import com.airbnb.lottie.manager.ImageAssetManager;
 import com.airbnb.lottie.model.KeyPath;
+import com.airbnb.lottie.model.Marker;
 import com.airbnb.lottie.model.layer.CompositionLayer;
 import com.airbnb.lottie.parser.LayerParser;
+import com.airbnb.lottie.utils.Logger;
 import com.airbnb.lottie.utils.LottieValueAnimator;
 import com.airbnb.lottie.utils.MiscUtils;
 import com.airbnb.lottie.value.LottieFrameInfo;
@@ -43,12 +45,8 @@ import java.util.Set;
 
 /**
  * This can be used to show an lottie animation in any place that would normally take a drawable.
- * If there are masks or mattes, then you MUST call {@link #recycleBitmaps()} when you are done
- * or else you will leak bitmaps.
- * <p>
- * It is preferable to use {@link com.airbnb.lottie.LottieAnimationView} when possible because it
- * handles bitmap recycling and asynchronous loading
- * of compositions.
+ *
+ * @see <a href="http://airbnb.io/lottie">Full Documentation</a>
  */
 @SuppressWarnings({"WeakerAccess", "unused"})
 public class LottieDrawable extends Drawable implements Drawable.Callback, Animatable {
@@ -62,23 +60,47 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
   private LottieComposition composition;
   private final LottieValueAnimator animator = new LottieValueAnimator();
   private float scale = 1f;
+  private boolean systemAnimationsEnabled = true;
 
   private final Set<ColorFilterData> colorFilterData = new HashSet<>();
   private final ArrayList<LazyCompositionTask> lazyCompositionTasks = new ArrayList<>();
-  @Nullable private ImageAssetManager imageAssetManager;
-  @Nullable private String imageAssetsFolder;
-  @Nullable private ImageAssetDelegate imageAssetDelegate;
-  @Nullable private FontAssetManager fontAssetManager;
-  @Nullable FontAssetDelegate fontAssetDelegate;
-  @Nullable TextDelegate textDelegate;
+  private final ValueAnimator.AnimatorUpdateListener  progressUpdateListener = new ValueAnimator.AnimatorUpdateListener() {
+    @Override
+    public void onAnimationUpdate(ValueAnimator animation) {
+      if (compositionLayer != null) {
+        compositionLayer.setProgress(animator.getAnimatedValueAbsolute());
+      }
+    }
+  };
+  @Nullable
+  private ImageAssetManager imageAssetManager;
+  @Nullable
+  private String imageAssetsFolder;
+  @Nullable
+  private ImageAssetDelegate imageAssetDelegate;
+  @Nullable
+  private FontAssetManager fontAssetManager;
+  @Nullable
+  FontAssetDelegate fontAssetDelegate;
+  @Nullable
+  TextDelegate textDelegate;
   private boolean enableMergePaths;
-  @Nullable private CompositionLayer compositionLayer;
+  @Nullable
+  private CompositionLayer compositionLayer;
   private int alpha = 255;
   private boolean performanceTrackingEnabled;
+  private boolean isApplyingOpacityToLayersEnabled;
+  /**
+   * True if the drawable has not been drawn since the last invalidateSelf.
+   * We can do this to prevent things like bounds from getting recalculated
+   * many times.
+   */
+  private boolean isDirty = false;
 
   @IntDef({RESTART, REVERSE})
   @Retention(RetentionPolicy.SOURCE)
-  public @interface RepeatMode {}
+  public @interface RepeatMode {
+  }
 
   /**
    * When the animation reaches the end and <code>repeatCount</code> is INFINITE
@@ -97,13 +119,7 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
   public static final int INFINITE = ValueAnimator.INFINITE;
 
   public LottieDrawable() {
-    animator.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
-      @Override public void onAnimationUpdate(ValueAnimator animation) {
-        if (compositionLayer != null) {
-          compositionLayer.setProgress(animator.getAnimatedValueAbsolute());
-        }
-      }
-    });
+    animator.addUpdateListener(progressUpdateListener);
   }
 
   /**
@@ -126,7 +142,7 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
 
   /**
    * Enable this to get merge path support for devices running KitKat (19) and above.
-   *
+   * <p>
    * Merge paths currently don't work if the the operand shape is entirely contained within the
    * first shape. If you need to cut out one shape from another shape, use an even-odd fill type
    * instead of using merge paths.
@@ -137,7 +153,7 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
     }
 
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
-      Log.w(TAG, "Merge paths are not supported pre-Kit Kat.");
+      Logger.warning("Merge paths are not supported pre-Kit Kat.");
       return;
     }
     enableMergePaths = enable;
@@ -154,15 +170,15 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
    * If you use image assets, you must explicitly specify the folder in assets/ in which they are
    * located because bodymovin uses the name filenames across all compositions (img_#).
    * Do NOT rename the images themselves.
-   *
+   * <p>
    * If your images are located in src/main/assets/airbnb_loader/ then call
    * `setImageAssetsFolder("airbnb_loader/");`.
-   *
-   *
+   * <p>
+   * <p>
    * If you use LottieDrawable directly, you MUST call {@link #recycleBitmaps()} when you
    * are done. Calling {@link #recycleBitmaps()} doesn't have to be final and {@link LottieDrawable}
    * will recreate the bitmaps if needed but they will leak if you don't recycle them.
-   *
+   * <p>
    * Be wary if you are using many images, however. Lottie is designed to work with vector shapes
    * from After Effects. If your images look like they could be represented with vector shapes,
    * see if it is possible to convert them to shape layers and re-export your animation. Check
@@ -173,21 +189,9 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
     this.imageAssetsFolder = imageAssetsFolder;
   }
 
-  @Nullable public String getImageAssetsFolder() {
+  @Nullable
+  public String getImageAssetsFolder() {
     return imageAssetsFolder;
-  }
-
-  /**
-   * If you have image assets and use {@link LottieDrawable} directly, you must call this yourself.
-   *
-   * Calling recycleBitmaps() doesn't have to be final and {@link LottieDrawable}
-   * will recreate the bitmaps if needed but they will leak if you don't recycle them.
-   *
-   */
-  public void recycleBitmaps() {
-    if (imageAssetManager != null) {
-      imageAssetManager.recycleBitmaps();
-    }
   }
 
   /**
@@ -200,6 +204,7 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
       return false;
     }
 
+    isDirty = false;
     clearComposition();
     this.composition = composition;
     buildCompositionLayer();
@@ -238,13 +243,33 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
     return null;
   }
 
+  /**
+   * Sets whether to apply opacity to the each layer instead of shape.
+   * <p>
+   * Opacity is normally applied directly to a shape. In cases where translucent shapes overlap, applying opacity to a layer will be more accurate
+   * at the expense of performance.
+   * <p>
+   * The default value is false.
+   * <p>
+   * Note: This process is very expensive. The performance impact will be reduced when hardware acceleration is enabled.
+   *
+   * @see View#setLayerType(int, android.graphics.Paint)
+   * @see LottieAnimationView#setRenderMode(RenderMode)
+   */
+  public void setApplyingOpacityToLayersEnabled(boolean isApplyingOpacityToLayersEnabled) {
+    this.isApplyingOpacityToLayersEnabled = isApplyingOpacityToLayersEnabled;
+  }
+
+  public boolean isApplyingOpacityToLayersEnabled() {
+    return isApplyingOpacityToLayersEnabled;
+  }
+
   private void buildCompositionLayer() {
     compositionLayer = new CompositionLayer(
         this, LayerParser.parse(composition), composition.getLayers(), composition);
   }
 
   public void clearComposition() {
-    recycleBitmaps();
     if (animator.isRunning()) {
       animator.cancel();
     }
@@ -255,30 +280,42 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
     invalidateSelf();
   }
 
-  @Override public void invalidateSelf() {
+  @Override
+  public void invalidateSelf() {
+    if (isDirty) {
+      return;
+    }
+    isDirty = true;
     final Callback callback = getCallback();
     if (callback != null) {
       callback.invalidateDrawable(this);
     }
   }
 
-  @Override public void setAlpha(@IntRange(from = 0, to = 255) int alpha) {
+  @Override
+  public void setAlpha(@IntRange(from = 0, to = 255) int alpha) {
     this.alpha = alpha;
+    invalidateSelf();
   }
 
-  @Override public int getAlpha() {
+  @Override
+  public int getAlpha() {
     return alpha;
   }
 
-  @Override public void setColorFilter(@Nullable ColorFilter colorFilter) {
-    Log.w(L.TAG, "Use addColorFilter instead.");
+  @Override
+  public void setColorFilter(@Nullable ColorFilter colorFilter) {
+    Logger.warning("Use addColorFilter instead.");
   }
 
-  @Override public int getOpacity() {
+  @Override
+  public int getOpacity() {
     return PixelFormat.TRANSLUCENT;
   }
 
-  @Override public void draw(@NonNull Canvas canvas) {
+  @Override
+  public void draw(@NonNull Canvas canvas) {
+    isDirty = false;
     L.beginSection("Drawable#draw");
     if (compositionLayer == null) {
       return;
@@ -292,6 +329,7 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
       extraScale = this.scale / scale;
     }
 
+    int saveCount = -1;
     if (extraScale > 1) {
       // This is a bit tricky...
       // We can't draw on a canvas larger than ViewConfiguration.get(context).getScaledMaximumDrawingCacheSize()
@@ -302,7 +340,7 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
       // to scale up the rest of the scale. However, since we rendered the animation to the top
       // left corner, we need to scale up and translate the canvas to zoom in on the top left
       // corner.
-      canvas.save();
+      saveCount = canvas.save();
       float halfWidth = composition.getBounds().width() / 2f;
       float halfHeight = composition.getBounds().height() / 2f;
       float scaledHalfWidth = halfWidth * scale;
@@ -319,24 +357,27 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
     compositionLayer.draw(canvas, matrix, alpha);
     L.endSection("Drawable#draw");
 
-    if (extraScale > 1) {
-      canvas.restore();
+    if (saveCount > 0) {
+      canvas.restoreToCount(saveCount);
     }
   }
 
 // <editor-fold desc="animator">
 
   @MainThread
-  @Override public void start() {
+  @Override
+  public void start() {
     playAnimation();
   }
 
   @MainThread
-  @Override public void stop() {
+  @Override
+  public void stop() {
     endAnimation();
   }
 
-  @Override public boolean isRunning() {
+  @Override
+  public boolean isRunning() {
     return isAnimating();
   }
 
@@ -348,13 +389,20 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
   public void playAnimation() {
     if (compositionLayer == null) {
       lazyCompositionTasks.add(new LazyCompositionTask() {
-        @Override public void run(LottieComposition composition) {
+        @Override
+        public void run(LottieComposition composition) {
           playAnimation();
         }
       });
       return;
     }
-    animator.playAnimation();
+
+    if (systemAnimationsEnabled || getRepeatCount() == 0) {
+      animator.playAnimation();
+    }
+    if (!systemAnimationsEnabled) {
+      setFrame((int) (getSpeed() < 0 ? getMinFrame() : getMaxFrame()));
+    }
   }
 
   @MainThread
@@ -371,13 +419,16 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
   public void resumeAnimation() {
     if (compositionLayer == null) {
       lazyCompositionTasks.add(new LazyCompositionTask() {
-        @Override public void run(LottieComposition composition) {
+        @Override
+        public void run(LottieComposition composition) {
           resumeAnimation();
         }
       });
       return;
     }
-    animator.resumeAnimation();
+    if (systemAnimationsEnabled) {
+      animator.resumeAnimation();
+    }
   }
 
   /**
@@ -406,16 +457,17 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
   /**
    * Sets the minimum progress that the animation will start from when playing or looping.
    */
-   public void setMinProgress(final float minProgress) {
-     if (composition == null) {
-       lazyCompositionTasks.add(new LazyCompositionTask() {
-         @Override public void run(LottieComposition composition) {
-           setMinProgress(minProgress);
-         }
-       });
-       return;
-     }
-   setMinFrame((int) MiscUtils.lerp(composition.getStartFrame(), composition.getEndFrame(), minProgress));
+  public void setMinProgress(final float minProgress) {
+    if (composition == null) {
+      lazyCompositionTasks.add(new LazyCompositionTask() {
+        @Override
+        public void run(LottieComposition composition) {
+          setMinProgress(minProgress);
+        }
+      });
+      return;
+    }
+    setMinFrame((int) MiscUtils.lerp(composition.getStartFrame(), composition.getEndFrame(), minProgress));
   }
 
   /**
@@ -431,7 +483,7 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
       });
       return;
     }
-    animator.setMaxFrame(maxFrame);
+    animator.setMaxFrame(maxFrame + 0.99f);
   }
 
   /**
@@ -447,13 +499,79 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
   public void setMaxProgress(@FloatRange(from = 0f, to = 1f) final float maxProgress) {
     if (composition == null) {
       lazyCompositionTasks.add(new LazyCompositionTask() {
-        @Override public void run(LottieComposition composition) {
+        @Override
+        public void run(LottieComposition composition) {
           setMaxProgress(maxProgress);
         }
       });
       return;
     }
     setMaxFrame((int) MiscUtils.lerp(composition.getStartFrame(), composition.getEndFrame(), maxProgress));
+  }
+
+  /**
+   * Sets the minimum frame to the start time of the specified marker.
+   * @throws IllegalArgumentException if the marker is not found.
+   */
+  public void setMinFrame(final String markerName) {
+    if (composition == null) {
+      lazyCompositionTasks.add(new LazyCompositionTask() {
+        @Override
+        public void run(LottieComposition composition) {
+          setMinFrame(markerName);
+        }
+      });
+      return;
+    }
+    Marker marker = composition.getMarker(markerName);
+    if (marker == null) {
+      throw new IllegalArgumentException("Cannot find marker with name " + markerName + ".");
+    }
+    setMinFrame((int) marker.startFrame);
+  }
+
+  /**
+   * Sets the maximum frame to the start time + duration of the specified marker.
+   * @throws IllegalArgumentException if the marker is not found.
+   */
+  public void setMaxFrame(final String markerName) {
+    if (composition == null) {
+      lazyCompositionTasks.add(new LazyCompositionTask() {
+        @Override
+        public void run(LottieComposition composition) {
+          setMaxFrame(markerName);
+        }
+      });
+      return;
+    }
+    Marker marker = composition.getMarker(markerName);
+    if (marker == null) {
+      throw new IllegalArgumentException("Cannot find marker with name " + markerName + ".");
+    }
+    setMaxFrame((int) (marker.startFrame + marker.durationFrames));
+  }
+
+  /**
+   * Sets the minimum and maximum frame to the start time and start time + duration
+   * of the specified marker.
+   * @throws IllegalArgumentException if the marker is not found.
+   */
+  public void setMinAndMaxFrame(final String markerName) {
+    if (composition == null) {
+      lazyCompositionTasks.add(new LazyCompositionTask() {
+        @Override
+        public void run(LottieComposition composition) {
+          setMinAndMaxFrame(markerName);
+        }
+      });
+      return;
+    }
+    Marker marker = composition.getMarker(markerName);
+    if (marker == null) {
+      throw new IllegalArgumentException("Cannot find marker with name " + markerName + ".");
+    }
+    int startFrame = (int) marker.startFrame;
+    setMinAndMaxFrame(startFrame, startFrame + (int) marker.durationFrames);
   }
 
   /**
@@ -470,7 +588,8 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
       });
       return;
     }
-    animator.setMinAndMaxFrames(minFrame, maxFrame);
+    // Adding 0.99 ensures that the maxFrame itself gets played.
+    animator.setMinAndMaxFrames(minFrame, maxFrame + 0.99f);
   }
 
   /**
@@ -482,7 +601,8 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
       @FloatRange(from = 0f, to = 1f) final float maxProgress) {
     if (composition == null) {
       lazyCompositionTasks.add(new LazyCompositionTask() {
-        @Override public void run(LottieComposition composition) {
+        @Override
+        public void run(LottieComposition composition) {
           setMinAndMaxProgress(minProgress, maxProgress);
         }
       });
@@ -490,11 +610,12 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
     }
 
     setMinAndMaxFrame((int) MiscUtils.lerp(composition.getStartFrame(), composition.getEndFrame(), minProgress),
-                      (int) MiscUtils.lerp(composition.getStartFrame(), composition.getEndFrame(), maxProgress));
+        (int) MiscUtils.lerp(composition.getStartFrame(), composition.getEndFrame(), maxProgress));
   }
 
   /**
    * Reverses the current animation speed. This does NOT play the animation.
+   *
    * @see #setSpeed(float)
    * @see #playAnimation()
    * @see #resumeAnimation()
@@ -527,6 +648,7 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
 
   public void removeAllUpdateListeners() {
     animator.removeAllUpdateListeners();
+    animator.addUpdateListener(progressUpdateListener);
   }
 
   public void addAnimatorListener(Animator.AnimatorListener listener) {
@@ -549,7 +671,8 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
   public void setFrame(final int frame) {
     if (composition == null) {
       lazyCompositionTasks.add(new LazyCompositionTask() {
-        @Override public void run(LottieComposition composition) {
+        @Override
+        public void run(LottieComposition composition) {
           setFrame(frame);
         }
       });
@@ -569,17 +692,19 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
   public void setProgress(@FloatRange(from = 0f, to = 1f) final float progress) {
     if (composition == null) {
       lazyCompositionTasks.add(new LazyCompositionTask() {
-        @Override public void run(LottieComposition composition) {
+        @Override
+        public void run(LottieComposition composition) {
           setProgress(progress);
         }
       });
       return;
     }
-    setFrame((int) MiscUtils.lerp(composition.getStartFrame(), composition.getEndFrame(), progress));
+    L.beginSection("Drawable#setProgress");
+    animator.setFrame(MiscUtils.lerp(composition.getStartFrame(), composition.getEndFrame(), progress));
+    L.endSection("Drawable#setProgress");
   }
 
   /**
-   *
    * @see #setRepeatCount(int)
    */
   @Deprecated
@@ -595,7 +720,7 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
    * @param mode {@link #RESTART} or {@link #REVERSE}
    */
   public void setRepeatMode(@RepeatMode int mode) {
-      animator.setRepeatMode(mode);
+    animator.setRepeatMode(mode);
   }
 
   /**
@@ -639,17 +764,21 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
     return animator.isRunning();
   }
 
+  void setSystemAnimationsAreEnabled(Boolean areEnabled) {
+    systemAnimationsEnabled = areEnabled;
+  }
+
 // </editor-fold>
 
   /**
    * Set the scale on the current composition. The only cost of this function is re-rendering the
    * current frame so you may call it frequent to scale something up or down.
-   *
+   * <p>
    * The smaller the animation is, the better the performance will be. You may find that scaling an
    * animation down then rendering it in a larger ImageView and letting ImageView scale it back up
    * with a scaleType such as centerInside will yield better performance with little perceivable
    * quality loss.
-   *
+   * <p>
    * You can also use a fixed view width/height in conjunction with the normal ImageView
    * scaleTypes centerCrop and centerInside.
    */
@@ -662,7 +791,7 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
    * Use this if you can't bundle images with your app. This may be useful if you download the
    * animations from the network or have the images saved to an SD Card. In that case, Lottie
    * will defer the loading of the bitmap to this delegate.
-   *
+   * <p>
    * Be wary if you are using many images, however. Lottie is designed to work with vector shapes
    * from After Effects. If your images look like they could be represented with vector shapes,
    * see if it is possible to convert them to shape layers and re-export your animation. Check
@@ -692,7 +821,8 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
     this.textDelegate = textDelegate;
   }
 
-  @Nullable public TextDelegate getTextDelegate() {
+  @Nullable
+  public TextDelegate getTextDelegate() {
     return textDelegate;
   }
 
@@ -732,25 +862,27 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
     return animator.getAnimatedValueAbsolute();
   }
 
-  @Override public int getIntrinsicWidth() {
+  @Override
+  public int getIntrinsicWidth() {
     return composition == null ? -1 : (int) (composition.getBounds().width() * getScale());
   }
 
-  @Override public int getIntrinsicHeight() {
+  @Override
+  public int getIntrinsicHeight() {
     return composition == null ? -1 : (int) (composition.getBounds().height() * getScale());
   }
 
   /**
    * Takes a {@link KeyPath}, potentially with wildcards or globstars and resolve it to a list of
    * zero or more actual {@link KeyPath Keypaths} that exist in the current animation.
-   *
+   * <p>
    * If you want to set value callbacks for any of these values, it is recommend to use the
    * returned {@link KeyPath} objects because they will be internally resolved to their content
    * and won't trigger a tree walk of the animation contents when applied.
    */
   public List<KeyPath> resolveKeyPath(KeyPath keyPath) {
     if (compositionLayer == null) {
-      Log.w(L.TAG, "Cannot resolve KeyPath. Composition is not set yet.");
+      Logger.warning("Cannot resolve KeyPath. Composition is not set yet.");
       return Collections.emptyList();
     }
     List<KeyPath> keyPaths = new ArrayList<>();
@@ -761,7 +893,7 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
   /**
    * Add an property callback for the specified {@link KeyPath}. This {@link KeyPath} can resolve
    * to multiple contents. In that case, the callbacks's value will apply to all of them.
-   *
+   * <p>
    * Internally, this will check if the {@link KeyPath} has already been resolved with
    * {@link #resolveKeyPath(KeyPath)} and will resolve it if it hasn't.
    */
@@ -769,7 +901,8 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
       final KeyPath keyPath, final T property, final LottieValueCallback<T> callback) {
     if (compositionLayer == null) {
       lazyCompositionTasks.add(new LazyCompositionTask() {
-        @Override public void run(LottieComposition composition) {
+        @Override
+        public void run(LottieComposition composition) {
           addValueCallback(keyPath, property, callback);
         }
       });
@@ -805,9 +938,10 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
    * drawable.addValueCallback(yourKeyPath, LottieProperty.COLOR) { yourColor }
    */
   public <T> void addValueCallback(KeyPath keyPath, T property,
-      final SimpleLottieValueCallback<T> callback) {
+                                   final SimpleLottieValueCallback<T> callback) {
     addValueCallback(keyPath, property, new LottieValueCallback<T>() {
-      @Override public T getValue(LottieFrameInfo<T> frameInfo) {
+      @Override
+      public T getValue(LottieFrameInfo<T> frameInfo) {
         return callback.getValue(frameInfo);
       }
     });
@@ -824,8 +958,8 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
   public Bitmap updateBitmap(String id, @Nullable Bitmap bitmap) {
     ImageAssetManager bm = getImageAssetManager();
     if (bm == null) {
-      Log.w(L.TAG, "Cannot update bitmap. Most likely the drawable is not added to a View " +
-        "which prevents Lottie from getting a Context.");
+      Logger.warning("Cannot update bitmap. Most likely the drawable is not added to a View " +
+          "which prevents Lottie from getting a Context.");
       return null;
     }
     Bitmap ret = bm.updateBitmap(id, bitmap);
@@ -833,7 +967,8 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
     return ret;
   }
 
-  @Nullable public Bitmap getImageAsset(String id) {
+  @Nullable
+  public Bitmap getImageAsset(String id) {
     ImageAssetManager bm = getImageAssetManager();
     if (bm != null) {
       return bm.bitmapForId(id);
@@ -848,7 +983,6 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
     }
 
     if (imageAssetManager != null && !imageAssetManager.hasSameContext(getContext())) {
-      imageAssetManager.recycleBitmaps();
       imageAssetManager = null;
     }
 
@@ -860,7 +994,8 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
     return imageAssetManager;
   }
 
-  @Nullable public Typeface getTypeface(String fontFamily, String style) {
+  @Nullable
+  public Typeface getTypeface(String fontFamily, String style) {
     FontAssetManager assetManager = getFontAssetManager();
     if (assetManager != null) {
       return assetManager.getTypeface(fontFamily, style);
@@ -881,7 +1016,8 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
     return fontAssetManager;
   }
 
-  @Nullable private Context getContext() {
+  @Nullable
+  private Context getContext() {
     Callback callback = getCallback();
     if (callback == null) {
       return null;
@@ -897,7 +1033,8 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
    * These Drawable.Callback methods proxy the calls so that this is the drawable that is
    * actually invalidated, not a child one which will not pass the view's validateDrawable check.
    */
-  @Override public void invalidateDrawable(@NonNull Drawable who) {
+  @Override
+  public void invalidateDrawable(@NonNull Drawable who) {
     Callback callback = getCallback();
     if (callback == null) {
       return;
@@ -905,7 +1042,8 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
     callback.invalidateDrawable(this);
   }
 
-  @Override public void scheduleDrawable(@NonNull Drawable who, @NonNull Runnable what, long when) {
+  @Override
+  public void scheduleDrawable(@NonNull Drawable who, @NonNull Runnable what, long when) {
     Callback callback = getCallback();
     if (callback == null) {
       return;
@@ -913,7 +1051,8 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
     callback.scheduleDrawable(this, what, when);
   }
 
-  @Override public void unscheduleDrawable(@NonNull Drawable who, @NonNull Runnable what) {
+  @Override
+  public void unscheduleDrawable(@NonNull Drawable who, @NonNull Runnable what) {
     Callback callback = getCallback();
     if (callback == null) {
       return;
@@ -934,17 +1073,20 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
   private static class ColorFilterData {
 
     final String layerName;
-    @Nullable final String contentName;
-    @Nullable final ColorFilter colorFilter;
+    @Nullable
+    final String contentName;
+    @Nullable
+    final ColorFilter colorFilter;
 
     ColorFilterData(@Nullable String layerName, @Nullable String contentName,
-        @Nullable ColorFilter colorFilter) {
+                    @Nullable ColorFilter colorFilter) {
       this.layerName = layerName;
       this.contentName = contentName;
       this.colorFilter = colorFilter;
     }
 
-    @Override public int hashCode() {
+    @Override
+    public int hashCode() {
       int hashCode = 17;
       if (layerName != null) {
         hashCode = hashCode * 31 * layerName.hashCode();
@@ -956,7 +1098,8 @@ public class LottieDrawable extends Drawable implements Drawable.Callback, Anima
       return hashCode;
     }
 
-    @Override public boolean equals(Object obj) {
+    @Override
+    public boolean equals(Object obj) {
       if (this == obj) {
         return true;
       }

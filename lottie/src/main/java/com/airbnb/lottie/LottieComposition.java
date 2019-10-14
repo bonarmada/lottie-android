@@ -9,12 +9,14 @@ import android.support.annotation.RestrictTo;
 import android.support.annotation.WorkerThread;
 import android.support.v4.util.LongSparseArray;
 import android.support.v4.util.SparseArrayCompat;
-import android.util.JsonReader;
 import android.util.Log;
 
 import com.airbnb.lottie.model.Font;
 import com.airbnb.lottie.model.FontCharacter;
+import com.airbnb.lottie.model.Marker;
 import com.airbnb.lottie.model.layer.Layer;
+import com.airbnb.lottie.parser.moshi.JsonReader;
+import com.airbnb.lottie.utils.Logger;
 
 import org.json.JSONObject;
 
@@ -32,7 +34,7 @@ import java.util.Map;
  *
  * To create one, use {@link LottieCompositionFactory}.
  *
- * It can be used with a {@link com.airbnb.lottie.LottieAnimationView} or
+ * It can be used with a {@link LottieAnimationView} or
  * {@link com.airbnb.lottie.LottieDrawable}.
  */
 public class LottieComposition {
@@ -43,6 +45,7 @@ public class LottieComposition {
   private Map<String, LottieImageAsset> images;
   /** Map of font names to fonts */
   private Map<String, Font> fonts;
+  private List<Marker> markers;
   private SparseArrayCompat<FontCharacter> characters;
   private LongSparseArray<Layer> layerMap;
   private List<Layer> layers;
@@ -51,11 +54,23 @@ public class LottieComposition {
   private float startFrame;
   private float endFrame;
   private float frameRate;
+  /**
+   * Used to determine if an animation can be drawn with hardware acceleration.
+   */
+  private boolean hasDashPattern;
+  /**
+   * Counts the number of mattes and masks. Before Android switched to SKIA
+   * for drawing in Oreo (API 28), using hardware acceleration with mattes and masks
+   * was only faster until you had ~4 masks after which it would actually become slower.
+   */
+  private int maskAndMatteCount = 0;
 
+  @RestrictTo(RestrictTo.Scope.LIBRARY)
   public void init(Rect bounds, float startFrame, float endFrame, float frameRate,
       List<Layer> layers, LongSparseArray<Layer> layerMap, Map<String,
       List<Layer>> precomps, Map<String, LottieImageAsset> images,
-      SparseArrayCompat<FontCharacter> characters, Map<String, Font> fonts) {
+      SparseArrayCompat<FontCharacter> characters, Map<String, Font> fonts,
+      List<Marker> markers) {
     this.bounds = bounds;
     this.startFrame = startFrame;
     this.endFrame = endFrame;
@@ -66,12 +81,39 @@ public class LottieComposition {
     this.images = images;
     this.characters = characters;
     this.fonts = fonts;
+    this.markers = markers;
   }
 
   @RestrictTo(RestrictTo.Scope.LIBRARY)
   public void addWarning(String warning) {
-    Log.w(L.TAG, warning);
+    Logger.warning(warning);
     warnings.add(warning);
+  }
+
+  @RestrictTo(RestrictTo.Scope.LIBRARY)
+  public void setHasDashPattern(boolean hasDashPattern) {
+    this.hasDashPattern = hasDashPattern;
+  }
+
+  @RestrictTo(RestrictTo.Scope.LIBRARY)
+  public void incrementMatteOrMaskCount(int amount) {
+    maskAndMatteCount += amount;
+  }
+
+  /**
+   * Used to determine if an animation can be drawn with hardware acceleration.
+   */
+  @RestrictTo(RestrictTo.Scope.LIBRARY)
+  public boolean hasDashPattern() {
+    return hasDashPattern;
+  }
+
+  /**
+   * Used to determine if an animation can be drawn with hardware acceleration.
+   */
+  @RestrictTo(RestrictTo.Scope.LIBRARY)
+  public int getMaskAndMatteCount() {
+    return maskAndMatteCount;
   }
 
   public ArrayList<String> getWarnings() {
@@ -129,6 +171,22 @@ public class LottieComposition {
 
   public Map<String, Font> getFonts() {
     return fonts;
+  }
+
+  public List<Marker> getMarkers() {
+    return markers;
+  }
+
+  @Nullable
+  public Marker getMarker(String markerName) {
+    int size = markers.size();
+    for (int i = 0; i < markers.size(); i++) {
+      Marker marker = markers.get(i);
+      if (marker.matchesName(markerName)) {
+        return marker;
+      }
+    }
+    return null;
   }
 
   public boolean hasImages() {
@@ -244,7 +302,7 @@ public class LottieComposition {
     @Deprecated
     public static LottieComposition fromInputStreamSync(InputStream stream, boolean close) {
       if (close) {
-        Log.w(L.TAG, "Lottie now auto-closes input stream!");
+        Logger.warning("Lottie now auto-closes input stream!");
       }
       return LottieCompositionFactory.fromJsonInputStreamSync(stream, null).getValue();
     }

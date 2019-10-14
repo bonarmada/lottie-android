@@ -1,6 +1,7 @@
 package com.airbnb.lottie.value;
 
 
+
 import android.support.annotation.Nullable;
 import android.support.annotation.RestrictTo;
 

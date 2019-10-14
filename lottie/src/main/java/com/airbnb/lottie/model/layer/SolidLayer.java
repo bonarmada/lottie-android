@@ -11,14 +11,14 @@ import android.support.annotation.Nullable;
 
 import com.airbnb.lottie.LottieDrawable;
 import com.airbnb.lottie.LottieProperty;
+import com.airbnb.lottie.animation.LPaint;
 import com.airbnb.lottie.animation.keyframe.BaseKeyframeAnimation;
 import com.airbnb.lottie.animation.keyframe.ValueCallbackKeyframeAnimation;
 import com.airbnb.lottie.value.LottieValueCallback;
 
 public class SolidLayer extends BaseLayer {
-
   private final RectF rect = new RectF();
-  private final Paint paint = new Paint();
+  private final Paint paint = new LPaint();
   private final float[] points = new float[8];
   private final Path path = new Path();
   private final Layer layerModel;
@@ -39,7 +39,8 @@ public class SolidLayer extends BaseLayer {
       return;
     }
 
-    int alpha = (int) (parentAlpha / 255f * (backgroundAlpha / 255f * transform.getOpacity().getValue() / 100f) * 255);
+    int opacity = transform.getOpacity() == null ? 100 : transform.getOpacity().getValue();
+    int alpha = (int) (parentAlpha / 255f * (backgroundAlpha / 255f * opacity / 100f) * 255);
     paint.setAlpha(alpha);
     if (colorFilterAnimation != null) {
       paint.setColorFilter(colorFilterAnimation.getValue());
@@ -68,8 +69,8 @@ public class SolidLayer extends BaseLayer {
     }
   }
 
-  @Override public void getBounds(RectF outBounds, Matrix parentMatrix) {
-    super.getBounds(outBounds, parentMatrix);
+  @Override public void getBounds(RectF outBounds, Matrix parentMatrix, boolean applyParents) {
+    super.getBounds(outBounds, parentMatrix, applyParents);
     rect.set(0, 0, layerModel.getSolidWidth(), layerModel.getSolidHeight());
     boundsMatrix.mapRect(rect);
     outBounds.set(rect);
